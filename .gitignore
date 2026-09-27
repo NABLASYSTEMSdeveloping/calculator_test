@@ -1,0 +1,18 @@
+# зависимости
+node_modules/
+.npm/
+
+# сборка
+dist/
+*.tsbuildinfo
+
+# тесты и покрытие
+coverage/
+
+# окружение и редакторы
+.env
+.env.local
+.DS_Store
+.idea/
+.vscode/
+*.log

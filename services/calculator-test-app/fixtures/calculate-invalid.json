@@ -1,0 +1,18 @@
+{
+  "$comment": "Контрактная фикстура: POST /api/v1/calculate с неизвестной операцией -> 422 INVALID_REQUEST.",
+  "request": {
+    "operation": "pow",
+    "operands": [2, 3]
+  },
+  "status": 422,
+  "headers": {
+    "content-type": "application/json",
+    "x-api-version": "1"
+  },
+  "response": {
+    "error": {
+      "code": "INVALID_REQUEST",
+      "message": "Некорректный запрос: operation: операция не поддерживается"
+    }
+  }
+}

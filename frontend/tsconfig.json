@@ -15,17 +15,6 @@
     "allowSyntheticDefaultImports": true,
     "isolatedModules": true,
     "types": ["vitest/globals", "node"]
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "verbatimModuleSyntax": true,
-    "isolatedModules": true,
-    "resolveJsonModule": true,
-    "skipLibCheck": true,
-    "noEmit": true,
-    "types": ["vite/client"]
   },
   "include": ["src", "vite.config.ts"]
 }

@@ -1,3 +1,17 @@
+# Зависимости и артефакты сборки
+node_modules/
+dist/
+.venv/
+.logs/
+__pycache__/
+*.pyc
+.pytest_cache/
+coverage/
+.DS_Store
+
+# Локальные env
+.env
+.env.local
 # зависимости
 node_modules/
 .npm/

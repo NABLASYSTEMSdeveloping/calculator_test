@@ -1,0 +1,20 @@
+{
+  "$comment": "Контрактная фикстура: успешный POST /api/v1/calculate (2 + 2 = 4). Источник правды для тестов frontend и backend.",
+  "request": {
+    "operation": "add",
+    "operands": [2, 2]
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-api-version": "1"
+  },
+  "response": {
+    "operation": "add",
+    "operands": [2, 2],
+    "result": 4,
+    "result_text": "4",
+    "expression": "2 + 2",
+    "precision": 12
+  }
+}

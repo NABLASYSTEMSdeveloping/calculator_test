@@ -1,0 +1,20 @@
+{
+  "$comment": "Контрактная фикстура: GET /api/v1/operations -> 200 OperationsResponse.",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/operations"
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-api-version": "1"
+  },
+  "response": {
+    "items": [
+      { "id": "add", "symbol": "+", "label": "Сложение", "arity": 2 },
+      { "id": "subtract", "symbol": "-", "label": "Вычитание", "arity": 2 },
+      { "id": "multiply", "symbol": "×", "label": "Умножение", "arity": 2 },
+      { "id": "divide", "symbol": "÷", "label": "Деление", "arity": 2 }
+    ]
+  }
+}

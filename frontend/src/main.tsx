@@ -1,5 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+
+import { CalculatorApp } from './components/CalculatorApp';
+import './styles.css';
+
+const container = document.getElementById('root');
 import { App } from './App';
 import './index.css';
 
@@ -11,6 +16,7 @@ if (container === null) {
 
 createRoot(container).render(
   <StrictMode>
+    <CalculatorApp />
     <App />
   </StrictMode>,
 );

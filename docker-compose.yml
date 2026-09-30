@@ -1,0 +1,45 @@
+name: calculator-test-app
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: calculator-test-app-backend:1.0.0
+    environment:
+      HISTORY_LIMIT: "100"
+      HISTORY_FILE: /data/history.json
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+        VITE_API_TIMEOUT_MS: "8000"
+        VITE_APP_VERSION: 1.0.0
+    image: calculator-test-app-frontend:1.0.0
+    ports:
+      - "5173:5173"
+    volumes:
+      # Общий том: собранная статика фронта (инициализируется из образа)
+      - frontend_dist:/usr/share/nginx/html
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  backend_data:
+  frontend_dist:

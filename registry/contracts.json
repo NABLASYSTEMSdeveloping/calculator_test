@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-09-27T12:30:00Z",
+  "contracts": [
+    {
+      "service": "frontend",
+      "mission": "calculator-test-app",
+      "version": "1.0.0",
+      "previous_version": null,
+      "status": "published",
+      "contract_path": "services/calculator-test-app/CONTRACT.md",
+      "implementation_path": "frontend/",
+      "runtime": "react@18.3.1 + vite@5.4.11",
+      "depends_on": [
+        {
+          "service": "backend",
+          "mission": "calculator-test-app",
+          "contract_version": "1.0.0",
+          "status": "required-not-published",
+          "note": "Контракт потребителя зафиксирован в разделе 5.1 CONTRACT.md; сервис backend в реестре пока не публиковался."
+        }
+      ]
+    }
+  ]
+}

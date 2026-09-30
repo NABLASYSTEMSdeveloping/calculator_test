@@ -1,0 +1,241 @@
+:root {
+  color-scheme: light dark;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --text: #1f2430;
+  --muted: #6b7280;
+  --accent: #2563eb;
+  --accent-text: #ffffff;
+  --danger: #b91c1c;
+  --border: #d7dbe3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 2rem 1rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(240px, 300px);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .app {
+    grid-template-columns: minmax(280px, 1fr);
+  }
+}
+
+.app__header {
+  margin-bottom: 0.75rem;
+}
+
+.app__title {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.app__subtitle {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.app__calculator,
+.history {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+}
+
+.app__status {
+  min-height: 1.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.app__busy {
+  color: var(--muted);
+}
+
+.app__error {
+  color: var(--danger);
+}
+
+.display {
+  background: #0f172a;
+  color: #f8fafc;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  min-height: 5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.display__expression {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  min-height: 1.2rem;
+}
+
+.display__value {
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.keypad {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.keypad__row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+}
+
+.keypad__button {
+  padding: 0.85rem 0;
+  font-size: 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfbfd;
+  color: inherit;
+  cursor: pointer;
+}
+
+.keypad__button:hover:not(:disabled) {
+  background: #eef1f6;
+}
+
+.keypad__button:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.keypad__button--function {
+  color: var(--muted);
+}
+
+.keypad__button--operation,
+.keypad__button--equals {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.keypad__button--operation:hover:not(:disabled),
+.keypad__button--equals:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.history__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.history__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.history__clear {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  color: inherit;
+}
+
+.history__clear:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.history__empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+.history__item {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history__item:hover {
+  border-color: var(--accent);
+}
+
+.history__result {
+  font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b1120;
+    --panel: #131c31;
+    --text: #e2e8f0;
+    --muted: #93a1b5;
+    --border: #2a3550;
+  }
+
+  .keypad__button {
+    background: #1b2540;
+  }
+
+  .keypad__button:hover:not(:disabled) {
+    background: #253054;
+  }
+
+  .history__item {
+    background: #1b2540;
+  }
+}

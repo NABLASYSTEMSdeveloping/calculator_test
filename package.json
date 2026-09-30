@@ -1,0 +1,22 @@
+{
+  "name": "calculator-test-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Монорепозиторий сервиса calculator-test-app: сервис frontend (калькулятор) и его контракты",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace frontend",
+    "build": "npm run build --workspace frontend",
+    "preview": "npm run preview --workspace frontend",
+    "test": "npm run test --workspace frontend",
+    "test:watch": "npm run test:watch --workspace frontend",
+    "typecheck": "npm run typecheck --workspace frontend",
+    "verify": "npm run typecheck && npm run test && npm run build"
+  }
+}

@@ -1,1 +1,69 @@
-# calculator_test
+# calculator-test-app
+
+Монорепозиторий сервиса `frontend` проекта **calculator-test-app**: калькулятор в браузере
+на React + TypeScript, с тестами на Vitest.
+
+## Состав
+
+| Каталог | Сервис | Контракт |
+| --- | --- | --- |
+| `frontend/` | UI калькулятора (React 19 + TS + Vite) | [`docs/contracts/frontend.md`](docs/contracts/frontend.md) |
+
+Реестр контрактов сервисов — [`docs/contracts/registry.md`](docs/contracts/registry.md).
+
+## Быстрый старт
+
+```bash
+npm install     # зависимости (npm workspaces, требуется Node >= 22.12)
+npm run dev     # UI: http://localhost:5173
+npm run test    # тесты (Vitest, jsdom)
+npm run verify  # typecheck + тесты + production-сборка
+```
+
+Прочие команды: `npm run build` (сборка в `frontend/dist`), `npm run preview`
+(предпросмотр сборки на `http://localhost:4173`), `npm run typecheck`, `npm run test:watch`.
+
+## Структура
+
+```
+.
+├── docs/contracts/
+│   ├── registry.md          # реестр контрактов сервисов
+│   └── frontend.md          # контракт сервиса frontend (источник правды об интерфейсах)
+├── frontend/                # сервис frontend (единственный сервис миссии)
+│   ├── src/domain/          # calculator.ts — доменное ядро, keyboard.ts — адаптер клавиатуры
+│   ├── src/components/      # Calculator, Display, Keypad
+│   ├── src/App.tsx          # корневой компонент страницы
+│   ├── src/main.tsx         # точка входа в браузерный DOM
+│   └── vite.config.ts       # сборка, dev-сервер, конфигурация тестов
+├── package.json             # npm workspaces + сводные скрипты
+└── README.md
+```
+
+Серверной части (`backend`) у сервиса нет: вычисления выполняются на клиенте,
+сетевых вызовов и внешних зависимостей-сервисов нет.
+
+## Контракт сервиса
+
+Единственный источник правды об интерфейсах — [`docs/contracts/frontend.md`](docs/contracts/frontend.md):
+
+- доменный API: `CalculatorState`, `CalculatorAction`, `reduce`, `evaluate`, `formatNumber`, `formatExpression`;
+- адаптер клавиатуры: `actionForKeyboardEvent`, `KEYBOARD_ACTIONS`;
+- props виджета `Calculator`: `initialState`, `onChange`, `enableKeyboard`, `className`;
+- стабильные DOM-хуки (`data-testid`, `aria-label`, CSS-классы) для внешних e2e;
+- семантика вычислений, обработка ошибок и правила форматирования;
+- команды сборки, запуска и тестов.
+
+Управление: цифры и `+ - * /`, `Enter`/`=` — результат, `Backspace` — удалить символ,
+`Esc` — сброс, `Del` — очистка ввода, `%`, `F9` — смена знака.
+
+Рабочие адреса: dev — `http://localhost:5173`, preview — `http://localhost:4173`.
+
+## QA и проверка
+
+Независимый набор проверок соответствия контракту —
+`frontend/src/qa/contract.qa.test.tsx` (входит в общий прогон `npm test`).
+Отчёт о проверке с воспроизводимыми фактами — [`docs/qa/report.md`](docs/qa/report.md):
+в нём зафиксировано найденное расхождение `formatNumber` для значений в диапазоне
+`[1e-9, 1e-6)` (дефект QA-1) и обоснование, почему ломающая правка не внесена.
+

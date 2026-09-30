@@ -1,0 +1,2181 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..6517f51
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,18 @@
++# зависимости
++node_modules/
++.npm/
++
++# сборка
++dist/
++*.tsbuildinfo
++
++# тесты и покрытие
++coverage/
++
++# окружение и редакторы
++.env
++.env.local
++.DS_Store
++.idea/
++.vscode/
++*.log
+diff --git a/README.md b/README.md
+index 3e2fda9..20f6d4d 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,60 @@
+-# calculator_test
++# calculator-test-app
++
++Монорепозиторий сервиса `frontend` проекта **calculator-test-app**: калькулятор в браузере
++на React + TypeScript, с тестами на Vitest.
++
++## Состав
++
++| Каталог | Сервис | Контракт |
++| --- | --- | --- |
++| `frontend/` | UI калькулятора (React 19 + TS + Vite) | [`docs/contracts/frontend.md`](docs/contracts/frontend.md) |
++
++Реестр контрактов сервисов — [`docs/contracts/registry.md`](docs/contracts/registry.md).
++
++## Быстрый старт
++
++```bash
++npm install     # зависимости (npm workspaces, требуется Node >= 22.12)
++npm run dev     # UI: http://localhost:5173
++npm run test    # тесты (Vitest, jsdom)
++npm run verify  # typecheck + тесты + production-сборка
++```
++
++Прочие команды: `npm run build` (сборка в `frontend/dist`), `npm run preview`
++(предпросмотр сборки на `http://localhost:4173`), `npm run typecheck`, `npm run test:watch`.
++
++## Структура
++
++```
++.
++├── docs/contracts/
++│   ├── registry.md          # реестр контрактов сервисов
++│   └── frontend.md          # контракт сервиса frontend (источник правды об интерфейсах)
++├── frontend/                # сервис frontend (единственный сервис миссии)
++│   ├── src/domain/          # calculator.ts — доменное ядро, keyboard.ts — адаптер клавиатуры
++│   ├── src/components/      # Calculator, Display, Keypad
++│   ├── src/App.tsx          # корневой компонент страницы
++│   ├── src/main.tsx         # точка входа в браузерный DOM
++│   └── vite.config.ts       # сборка, dev-сервер, конфигурация тестов
++├── package.json             # npm workspaces + сводные скрипты
++└── README.md
++```
++
++Серверной части (`backend`) у сервиса нет: вычисления выполняются на клиенте,
++сетевых вызовов и внешних зависимостей-сервисов нет.
++
++## Контракт сервиса
++
++Единственный источник правды об интерфейсах — [`docs/contracts/frontend.md`](docs/contracts/frontend.md):
++
++- доменный API: `CalculatorState`, `CalculatorAction`, `reduce`, `evaluate`, `formatNumber`, `formatExpression`;
++- адаптер клавиатуры: `actionForKeyboardEvent`, `KEYBOARD_ACTIONS`;
++- props виджета `Calculator`: `initialState`, `onChange`, `enableKeyboard`, `className`;
++- стабильные DOM-хуки (`data-testid`, `aria-label`, CSS-классы) для внешних e2e;
++- семантика вычислений, обработка ошибок и правила форматирования;
++- команды сборки, запуска и тестов.
++
++Управление: цифры и `+ - * /`, `Enter`/`=` — результат, `Backspace` — удалить символ,
++`Esc` — сброс, `Del` — очистка ввода, `%`, `F9` — смена знака.
++
++Рабочие адреса: dev — `http://localhost:5173`, preview — `http://localhost:4173`.
+diff --git a/docs/contracts/frontend.md b/docs/contracts/frontend.md
+new file mode 100644
+index 0000000..9d70b7d
+--- /dev/null
++++ b/docs/contracts/frontend.md
+@@ -0,0 +1,335 @@
++# Контракт сервиса `frontend` — calculator-test-app
++
++| Поле | Значение |
++| --- | --- |
++| Идентификатор сервиса | `frontend` |
++| Версия контракта | 1.0.0 |
++| Тип | клиентское SPA (браузер), без серверной части |
++| Каталог | `frontend/` |
++| Технологии | TypeScript 5.9, React 19, Vite 7, Vitest 3 |
++| Владелец | команда calculator-test-app (задачу решает исполнитель миссии) |
++| Статус | реализован; typecheck, тесты и сборка проходят |
++
++## 1. Назначение и границы
++
++Назначение: интерактивный калькулятор в браузере. Сервис принимает ввод пользователя
++(экранные клавиши и клавиатура), выполняет элементарную арифметику и отображает результат.
++
++**В границах сервиса**
++
++- четыре арифметические операции: `+`, `-`, `×`, `÷`;
++- ввод десятичных чисел, смена знака, проценты, очистка (`C`), очистка ввода (`CE`), удаление символа (`⌫`);
++- повтор последней операции повторным нажатием `=`;
++- состояние ошибки (деление на ноль, выход за диапазон конечных чисел) и выход из него;
++- форматирование результата для отображения;
++- ввод с физической клавиатуры.
++
++**Вне границ (не интерфейсы сервиса, менять можно свободно)**
++
++- сетевые вызовы, серверное API, персистентность (нет ни `fetch`, ни cookies/localStorage);
++- аутентификация, авторизация, роли;
++- маршрутизация (одна страница, один корневой компонент);
++- темы оформления, локализация форматов чисел, выбор десятичного разделителя;
++- функции памяти (`M+`, `MR`), история вычислений, скобки, приоритет операций;
++- SSR, service worker, PWA-манифест.
++
++Зависимостей от других сервисов нет (см. [registry.md](./registry.md)).
++
++## 2. Зависимости
++
++**Runtime-зависимости** (в `frontend/package.json`, точные версии):
++
++| Пакет | Версия | Роль |
++| --- | --- | --- |
++| `react` | 19.3.0 | рендеринг UI |
++| `react-dom` | 19.3.0 | точка входа в браузерном DOM |
++
++**Dev/test-зависимости**: `vite` 7.3.6, `@vitejs/plugin-react` 5.2.0, `typescript` 5.9.3,
++`vitest` 3.2.7, `jsdom` 26.1.0, `@testing-library/react` 16.3.3,
++`@testing-library/user-event` 14.6.7, `@testing-library/jest-dom` 6.9.1,
++`@types/react` 19.3.0, `@types/react-dom` 19.3.0.
++
++Требуется Node.js `>=22.12.0` (ограничение Vite 7, зафиксировано в `engines`).
++
++Внешних сервисов и рантайм-обращений к сети у сервиса нет: доменное ядро —
++чистые функции, UI обменивается данными только через props и действия редьюсера.
++
++## 3. Публичные интерфейсы
++
++### 3.1 Доменный API — `frontend/src/domain/calculator.ts`
++
++Модуль не имеет побочных эффектов: те же входные данные всегда дают тот же результат.
++Состояние неизменяемо — редьюсер возвращает новый объект либо тот же самый, если действие ничего не меняет.
++
++**Константы**
++
++| Имя | Значение | Смысл |
++| --- | --- | --- |
++| `OPERATORS` | `['+', '-', '×', '÷']` | полный список операторов |
++| `DIGITS` | `['0'…'9']` | допустимые цифры ввода |
++| `INITIAL_DISPLAY` | `'0'` | дисплей в начальном состоянии |
++| `ERROR_TEXT` | `'Error'` | дисплей в состоянии ошибки |
++| `MAX_ENTRY_DIGITS` | `16` | максимум цифр в одном вводимом числе |
++| `MAX_SIGNIFICANT_DIGITS` | `12` | максимум значащих цифр в выводе |
++| `EXPONENTIAL_UPPER_BOUND` | `1e12` | выше — экспоненциальная запись |
++| `EXPONENTIAL_LOWER_BOUND` | `1e-9` | ниже — экспоненциальная запись |
++| `INITIAL_STATE` | см. ниже | начальное состояние (заморожено) |
++| `ERROR_STATE` | см. ниже | состояние ошибки (заморожено) |
++
++**Типы**
++
++```ts
++type Operator = '+' | '-' | '×' | '÷';
++type Digit = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
++
++interface CalculatorState {
++  readonly display: string;                       // то, что видит пользователь
++  readonly accumulator: number | null;            // левый операнд незавершённой операции
++  readonly pendingOperator: Operator | null;      // ожидающий оператор
++  readonly entry: string | null;                  // вводимое число; null — на дисплее результат
++  readonly repeat: { operator: Operator; operand: number } | null; // для повторного «=»
++  readonly error: boolean;                        // состояние ошибки
++}
++
++type CalculatorAction =
++  | { type: 'digit'; digit: Digit }
++  | { type: 'decimal' }
++  | { type: 'operator'; operator: Operator }
++  | { type: 'equals' }
++  | { type: 'clear' }        // C  — полный сброс
++  | { type: 'clearEntry' }   // CE — сброс текущего ввода, операция сохраняется
++  | { type: 'backspace' }    // ⌫  — удалить последний введённый символ
++  | { type: 'toggleSign' }   // ±  — сменить знак
++  | { type: 'percent' };     // %  — процент
++```
++
++**Функции**
++
++| Сигнатура | Гарантии |
++| --- | --- |
++| `reduce(state: CalculatorState, action: CalculatorAction): CalculatorState` | чистая, не мутирует `state`; при отсутствии изменений возвращает исходный объект |
++| `evaluate(left: number, right: number, operator: Operator): number` | `÷` при `right === 0` возвращает `NaN`; остальные операции — обычная арифметика IEEE-754 |
++| `formatNumber(value: number): string` | нефинитные значения (`NaN`, `±Infinity`) → `ERROR_TEXT`; `±0` → `'0'`; не более `MAX_SIGNIFICANT_DIGITS` значащих цифр; за пределами `[1e-9, 1e12)` — экспоненциальная запись вида `1.23456789012e+12` |
++| `formatExpression(state: CalculatorState): string` | `'<accumulator> <operator>'` (например `'12 +'`); пустая строка, если операции нет или состояние в ошибке |
++| `isDigit(value: string): value is Digit` | `true` ровно для строки из одной цифры `0…9` |
++
++### 3.2 Адаптер клавиатуры — `frontend/src/domain/keyboard.ts`
++
++`actionForKeyboardEvent(key: string): CalculatorAction | null` — отображение `KeyboardEvent.key`
++в действие калькулятора; `null` означает «клавиша не поддерживается, событие не перехватывается».
++Константа `KEYBOARD_ACTIONS` — публичная карта поддерживаемых нецифровых клавиш.
++
++| Клавиша (`event.key`) | Действие |
++| --- | --- |
++| `0`…`9` | `digit` |
++| `.` , `,` | `decimal` |
++| `+` | `operator '+'` |
++| `-` | `operator '-'` |
++| `*` , `×` | `operator '×'` |
++| `/` , `÷` | `operator '÷'` |
++| `=` , `Enter` | `equals` |
++| `c` , `C` , `Escape` | `clear` |
++| `Delete` | `clearEntry` |
++| `Backspace` | `backspace` |
++| `%` | `percent` |
++| `F9` | `toggleSign` |
++| любые другие | `null` (событие не перехватывается) |
++
++### 3.3 React-компоненты
++
++**`Calculator` — `frontend/src/components/Calculator.tsx`** (корневой интерфейс виджета)
++
++| Prop | Тип | Обязательный | По умолчанию | Семантика |
++| --- | --- | --- | --- | --- |
++| `initialState` | `CalculatorState` | нет | `INITIAL_STATE` | применяется только при первом рендере |
++| `onChange` | `(state: CalculatorState) => void` | нет | — | вызов после каждого изменения состояния, **включая первый рендер** |
++| `enableKeyboard` | `boolean` | нет | `true` | перехват `keydown` на `window` |
++| `className` | `string` | нет | — | добавляется к CSS-классу корневого элемента |
++
++Гарантии компонента:
++
++- **неконтролируемый**: источник правды — внутренний редьюсер, `initialState` не перечитывается;
++- клавиши на экране и клавиатура порождают одни и те же действия `CalculatorAction`;
++- при `enableKeyboard: true` для поддерживаемых клавиш вызывается `event.preventDefault()`,
++  для неподдерживаемых (`actionForKeyboardEvent` → `null`) событие не трогается;
++- клавиатурные события, пришедшие из полей ввода (`<input>`, `<textarea>`, `<select>`,
++  `contenteditable`), не перехватываются;
++- обработчик `keydown` снимается при размонтировании и при `enableKeyboard: false`;
++- сетевых вызовов, таймеров, обращений к `localStorage` нет.
++
++Тонкости события `onChange`, которые нужно учитывать потребителю:
++
++- вызов происходит в эффекте после коммита состояния, поэтому при нестабильной ссылке на
++  обработчик (новая функция на каждый рендер) он может вызываться чаще, чем меняется состояние;
++  передавайте `useCallback`-обёртку;
++- в dev-режиме React `StrictMode` монтирует компонент дважды, поэтому первый вызов может повториться;
++- `onChange` — уведомление, а не управляющий вход: вернуть состояние в виджет через него нельзя.
++
++**`Display` — `frontend/src/components/Display.tsx`**: `value: string` (строка дисплея),
++`expression: string` (незавершённое выражение или пустая строка), `hasError: boolean`.
++
++**`Keypad` — `frontend/src/components/Keypad.tsx`**: `onAction: (action: CalculatorAction) => void`,
++`disabled?: boolean`. Публичная раскладка `CALCULATOR_KEYS: readonly CalculatorKeyDefinition[]` — 20 клавиш:
++
++| Ряд | `id` клавиш (слева направо) |
++| --- | --- |
++| 1 | `clear`, `backspace`, `percent`, `divide` |
++| 2 | `7`, `8`, `9`, `multiply` |
++| 3 | `4`, `5`, `6`, `subtract` |
++| 4 | `1`, `2`, `3`, `add` |
++| 5 | `toggle-sign`, `0`, `decimal`, `equals` |
++
++У клавиши `clearEntry` (CE) в версии 1.0.0 **нет** экранной кнопки: действие доступно через
++доменный API и клавишу `Delete` (см. 4.5 и 7).
++
++### 3.4 DOM-интерфейс (стабильные хуки для тестов и e2e)
++
++| Селектор | Элемент |
++| --- | --- |
++| `#root` | точка монтирования приложения |
++| `[data-testid="calculator"]` | корневой `<section>`; класс `calculator`, в ошибке — `calculator--error` |
++| `[data-testid="display"]` | контейнер дисплея |
++| `[data-testid="expression"]` | строка выражения (неразрывный пробел, когда выражения нет) |
++| `[data-testid="display-value"]` | текущее значение: `<output role="status" aria-live="polite" aria-label="Результат вычислений">` с `data-state="ok" \| "error"` |
++| `[data-testid="keypad"]` | `<div role="group" aria-label="Клавиши калькулятора">` |
++| `[data-testid="key-<id>"]` | `<button type="button">` с `aria-label` и `data-action="<тип действия>"` |
++| `[data-testid="keyboard-hint"]`, `[data-testid="change-count"]` | элементы уровня `App` (демонстрация события `onChange`), не часть контракта виджета |
++
++CSS-классы `display__expression`, `display__value`, `keypad`, `keypad__key`,
++`keypad__key--digit|operator|function|equals` — публичные точки для стилизации;
++`data-testid` и `id` клавиш не меняются в пределах мажорной версии контракта.
++
++### 3.5 Сборка, запуск и тесты
++
++| Команда (из корня) | Действие |
++| --- | --- |
++| `npm install` | установка зависимостей (npm workspaces) |
++| `npm run dev` | dev-сервер Vite: `http://0.0.0.0:5173` (strictPort) |
++| `npm run build` | `tsc --noEmit` + продакшн-сборка в `frontend/dist` |
++| `npm run preview` | предпросмотр сборки: `http://0.0.0.0:4173` |
++| `npm run typecheck` | проверка типов без эмита |
++| `npm run test` | прогон тестов Vitest (jsdom) один раз |
++| `npm run test:watch` | тесты в режиме наблюдения |
++| `npm run verify` | `typecheck` → `test` → `build` (полная проверка) |
++
++Те же скрипты доступны в workspace: `npm run <script> --workspace frontend` (или из каталога `frontend/`).
++
++Артефакт сборки: `frontend/dist/index.html`, `frontend/dist/assets/*.js`, `*.css`, `*.js.map`
++(каталог `dist/` не коммитится). Внешних переменных окружения сервис не читает;
++порт и хост зафиксированы в `frontend/vite.config.ts`.
++
++## 4. Семантика вычислений
++
++### 4.1 Общие принципы
++
++- Вычисление ведётся **слева направо, без приоритетов операций**: `2 + 3 × 4 =` даёт `20`.
++- Нажатие оператора завершает предыдущую незавершённую операцию и запоминает результат в `accumulator`.
++- Значение `display` — единственное, что показывается пользователю; остальные поля — контекст.
++
++### 4.2 Ввод числа
++
++| Ситуация | Результат |
++| --- | --- |
++| Ведущие нули (`0`, `0`, `0`) | `0` (нули не накапливаются) |
++| `0`, затем `5` | `5` |
++| Точка при пустом вводе | `0.` |
++| Повторная точка (`1..2`) | игнорируется → `1.2` |
++| Больше `MAX_ENTRY_DIGITS` (16) цифр | лишние цифры игнорируются |
++| Цифра после `=` | начинается новое число (`2+3=7` → `7`) |
++| Цифра после экспоненциального результата | результат заменяется новой цифрой |
++| Цифра в состоянии ошибки | начинается новое вычисление, ошибка снимается |
++
++### 4.3 Операторы и «=»
++
++| Ситуация | Результат |
++| --- | --- |
++| Повторный оператор (`5 + *`) | ожидающий оператор заменяется (`5 ×`), вычисление не выполняется |
++| Оператор после ввода правого операнда (`2 + 3 ×`) | операция выполняется (`5`), новый оператор ожидает |
++| `=` с введённым правым операндом | обычное вычисление (`2 + 3 =` → `5`) |
++| `=` без правого операнда (`5 + =`) | правым операндом становится аккумулятор → `10` |
++| Повторные `=` (`2 + 3 = = =`) | повторяют последнюю операцию: `5`, `8`, `11` |
++| `=` без операции (`7 =`) | дисплей нормализуется, значение становится аккумулятором |
++| Оператор и `=` в состоянии ошибки | игнорируются, состояние не меняется |
++
++### 4.4 «±» и «%»
++
++- `±` меняет знак вводимого числа; если ввод не начат — знак аккумулятора (или значения дисплея):
++  `5 + ± =` → `0`; `±` от `0` даёт `0` (значение `-0` не появляется).
++- `%` при ожидающем операторе превращает правый операнд в «процент от левого»:
++  правый = `accumulator × значение / 100`, операция остаётся незавершённой.
++
++| Ввод | После `%` | После `=` |
++| --- | --- | --- |
++| `200 + 10 %` | `20` | `220` |
++| `200 - 10 %` | `20` | `180` |
++| `50 × 10 %` | `5` | `250` |
++| `80 ÷ 10 %` | `8` | `10` |
++
++- `%` без ожидающего оператора делит значение на 100 (`50 %` → `0.5`).
++
++### 4.5 «C», «CE» и «⌫»
++
++| Действие | Клавиши | Поведение |
++| --- | --- | --- |
++| `clear` (C) | кнопка `C`, `Escape`, `c`, `C` | полный сброс к `INITIAL_STATE` |
++| `clearEntry` (CE) | `Delete` (в UI кнопки нет) | текущий ввод заменяется на `0`, аккумулятор и ожидающий оператор сохраняются (`12 + 3`, CE, `5 =` → `17`) |
++| `backspace` (⌫) | кнопка `⌫`, `Backspace` | удаляет последний символ ввода; на одном символе даёт `0`; на вычисленном результате не действует |
++
++### 4.6 Ошибки
++
++- Деление на ноль (`5 ÷ 0 =`) и выход за диапазон конечных `double` (`1e308 × 1e308`) → `ERROR_STATE`:
++  `display = 'Error'`, `error = true`, аккумулятор и оператор очищаются.
++- В состоянии ошибки `=` и операторы игнорируются, состояние не меняется; цифра начинает новое число,
++  точка — новое число `0.`; `C`, `CE`, `⌫`, `±`, `%` выполняют полный сброс к `INITIAL_STATE`.
++
++### 4.7 Форматирование и лимиты
++
++- До `MAX_SIGNIFICANT_DIGITS` (12) значащих цифр, без незначащих нулей: `0.1 + 0.2` → `0.3`,
++  `1 ÷ 3` → `0.333333333333`.
++- `±0` отображается как `0`; нефинитные значения — как `Error`.
++- Вне диапазона `[1e-9, 1e12)` — экспоненциальная запись: `1e+12`, `1.23456789012e+12`, `1e-10`.
++- Промежуточные вычисления ведутся в `double` (IEEE-754) без десятичной арифметики произвольной точности.
++
++## 5. Совместимость и версионирование
++
++Версия контракта — `1.0.0` (SemVer). Контракт и код меняются одним изменением.
++
++| Тип изменения | Что это | Версия |
++| --- | --- | --- |
++| Мажорное | удаление/переименование экспортов домена, изменение сигнатур, смена семантики действий, изменение правил форматирования, удаление или переименование CSS-классов, `data-testid` и `id` клавиш, изменение раскладки | `2.0.0` |
++| Минорное | новое действие или клавиша, новый необязательный prop, новый `data-testid`, новые экспорты | `1.1.0` |
++| Патч | исправление реализации без изменения интерфейсов и семантики | `1.0.1` |
++
++Потребители интерфейса на текущий момент: тесты этого репозитория и внешние e2e/UI-проверки,
++которые опираются на DOM-хуки из 3.4. Других сервисов-потребителей нет.
++
++Правило: если требуемое изменение ломает публичный интерфейс (см. таблицу), работа
++останавливается и изменение согласуется как мажорное — молчаливых ломающих правок быть не должно.
++
++## 6. Приёмка: соответствие контракта и тестов
++
++Прогон: `npm test` (или `npm run verify` для typecheck + тесты + сборка).
++
++| Пункт контракта | Файл тестов | Проверяемые кейсы |
++| --- | --- | --- |
++| 3.1 доменный API | `frontend/src/domain/calculator.test.ts` | `INITIAL_STATE`, ввод числа и лимит цифр, операторы, повторные `=`, ошибки и переполнение, `C`/`CE`/`⌫`, `±`, `%`, `formatNumber`, `formatExpression`, `evaluate`, `isDigit`, иммутабельность |
++| 3.2 адаптер клавиатуры | `frontend/src/domain/keyboard.test.ts` | все цифры, разделители, `*`/`/` → `×`/`÷`, `=`/`Enter`, `Escape`/`c`/`C`, `Delete`, `Backspace`, `%`, `F9`, неподдерживаемые клавиши → `null`, принадлежность операторов списку `OPERATORS` |
++| 3.3 компонент `Calculator` | `frontend/src/components/Calculator.test.tsx` | начальное состояние, полная раскладка из 20 клавиш с `aria-label`/`data-action`, вычисление кликами, строка выражения, состояние ошибки, сброс, ввод с клавиатуры, игнорирование полей ввода, `enableKeyboard: false`, `onChange`, `initialState` |
++| 3.4 DOM-хуки | `frontend/src/components/Calculator.test.tsx`, `frontend/src/App.test.tsx` | `calculator`, `display`, `expression`, `display-value` (`data-state`), `keypad`, `key-<id>`, `keyboard-hint`, `change-count` |
++| 3.5 сборка и запуск | — | проверяется командой `npm run verify` (typecheck + тесты + продакшн-сборка) |
++| 4.1–4.7 семантика | `frontend/src/domain/calculator.test.ts` | таблицы поведения, ошибки, форматирование, лимиты |
++
++## 7. Известные ограничения
++
++- Нет приоритета операций: вычисление строго слева направо (зафиксировано контрактом, п. 4.1).
++- Нет памяти (`M+`/`MR`), истории, скобок, степеней, корней и тригонометрии.
++- У `CE` нет экранной кнопки: только `Delete` и доменное действие `clearEntry`.
++- Нет персистентности: состояние теряется при перезагрузке страницы.
++- Нет локализации: десятичный разделитель — точка, экспоненциальная запись — в формате JavaScript (`1e+12`).
++- Арифметика — `double`: `0.1 + 0.2` даёт `0.3` только после форматирования дисплея,
++  внутреннее значение остаётся `0.30000000000000004`.
++- Точность ограничена: 16 цифр на ввод, 12 значащих цифр на вывод.
++- Тесты выполняются в `jsdom`, реального браузерного e2e в репозитории нет:
++  для него предоставлены стабильные DOM-хуки из п. 3.4.
++- Доступность ограничена разметкой (`aria-label`, `role="status"`, фокус-стили); полный a11y-аудит не проводился.
++- Целевые браузеры — поддерживающие ES2022 (цель сборки Vite `es2022`).
+diff --git a/docs/contracts/registry.md b/docs/contracts/registry.md
+new file mode 100644
+index 0000000..607246b
+--- /dev/null
++++ b/docs/contracts/registry.md
+@@ -0,0 +1,31 @@
++# Реестр контрактов сервисов
++
++Источник правды об интерфейсах сервисов монорепозитория `calculator-test-app`.
++Контракт описывается **до** реализации и изменяется вместе с ней: изменение публичного
++интерфейса без правки контракта считается дефектом.
++
++| Сервис | Тип | Каталог | Контракт | Версия | Статус |
++| --- | --- | --- | --- | --- | --- |
++| `frontend` | Клиентское SPA (браузер) | `frontend/` | [frontend.md](./frontend.md) | 1.0.0 | реализован, тесты проходят |
++
++## Границы монорепозитория
++
++| Компонент | Состояние | Комментарий |
++| --- | --- | --- |
++| `frontend` | существует | единственный сервис миссии; содержит доменное ядро, UI и тесты |
++| `backend` | **отсутствует** | сервис frontend самодостаточен: вычисления выполняются на клиенте, сетевых вызовов и серверного API нет |
++
++Поэтому у сервиса `frontend` **нет внешних зависимостей-сервисов**: контракт не резервирует
++ни одного сетевого интерфейса (HTTP, WebSocket, RPC), ни схемы данных, ни точки аутентификации.
++Если серверное API когда-либо появится, оно оформляется отдельным сервисом и отдельным контрактом
++в этом реестре; текущий контракт frontend при этом меняться не обязан.
++
++## Внутренние (непубличные) интерфейсы
++
++Перечисленные сущности намеренно **не** входят в контракт и могут меняться без согласования:
++
++- модульная структура файлов внутри `frontend/src` (кроме перечисленных в контракте модулей);
++- внутренние компоненты `Display` и `Keypad` считаются публичными только в объёме props и DOM-хуков;
++- стили (`frontend/src/index.css`) — значения цветов, отступов, шрифтов;
++- тестовые хелперы внутри `*.test.ts(x)`;
++- содержимое `dist/` (артефакт сборки, в репозиторий не попадает).
+diff --git a/frontend/README.md b/frontend/README.md
+new file mode 100644
+index 0000000..363d129
+--- /dev/null
++++ b/frontend/README.md
+@@ -0,0 +1,26 @@
++# frontend — сервис calculator-test-app
++
++Калькулятор в браузере: React 19 + TypeScript + Vite 7, тесты на Vitest 3 (jsdom).
++
++```bash
++npm install            # из корня монорепозитория (npm workspaces)
++npm run dev            # http://localhost:5173
++npm run test           # тесты
++npm run typecheck      # проверка типов
++npm run build          # сборка в dist/
++```
++
++Контракт сервиса (публичные интерфейсы, семантика, DOM-хуки, команды) —
++[`../docs/contracts/frontend.md`](../docs/contracts/frontend.md).
++
++Структура:
++
++| Путь | Назначение |
++| --- | --- |
++| `src/domain/calculator.ts` | доменное ядро: состояние, действия, чистый редьюсер, форматирование |
++| `src/domain/keyboard.ts` | адаптер `KeyboardEvent.key` → действие калькулятора |
++| `src/components/Calculator.tsx` | виджет: props `initialState`, `onChange`, `enableKeyboard`, `className` |
++| `src/components/Display.tsx`, `src/components/Keypad.tsx` | дисплей и раскладка клавиш |
++| `src/App.tsx`, `src/main.tsx`, `src/index.css` | страница, точка входа, стили |
++| `src/**/*.test.ts(x)` | доменные, адаптерные, компонентные и smoke-тесты |
++| `src/test/setup.ts` | настройка jsdom + Testing Library |
+diff --git a/frontend/index.html b/frontend/index.html
+new file mode 100644
+index 0000000..b25a375
+--- /dev/null
++++ b/frontend/index.html
+@@ -0,0 +1,13 @@
++<!doctype html>
++<html lang="ru">
++  <head>
++    <meta charset="UTF-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <meta name="description" content="calculator-test-app — сервис frontend: калькулятор" />
++    <title>calculator-test-app — калькулятор</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <script type="module" src="/src/main.tsx"></script>
++  </body>
++</html>
+diff --git a/frontend/package.json b/frontend/package.json
+new file mode 100644
+index 0000000..1eb32da
+--- /dev/null
++++ b/frontend/package.json
+@@ -0,0 +1,34 @@
++{
++  "name": "calculator-frontend",
++  "version": "1.0.0",
++  "private": true,
++  "description": "Сервис frontend калькулятора (SPA на React + TypeScript + Vite)",
++  "type": "module",
++  "engines": {
++    "node": ">=22.12.0"
++  },
++  "scripts": {
++    "dev": "vite",
++    "build": "tsc --noEmit && vite build",
++    "preview": "vite preview",
++    "typecheck": "tsc --noEmit",
++    "test": "vitest run",
++    "test:watch": "vitest"
++  },
++  "dependencies": {
++    "react": "19.3.0",
++    "react-dom": "19.3.0"
++  },
++  "devDependencies": {
++    "@testing-library/jest-dom": "6.9.1",
++    "@testing-library/react": "16.3.3",
++    "@testing-library/user-event": "14.6.7",
++    "@types/react": "19.3.0",
++    "@types/react-dom": "19.3.0",
++    "@vitejs/plugin-react": "5.2.0",
++    "jsdom": "26.1.0",
++    "typescript": "5.9.3",
++    "vite": "7.3.6",
++    "vitest": "3.2.7"
++  }
++}
+diff --git a/frontend/src/App.test.tsx b/frontend/src/App.test.tsx
+new file mode 100644
+index 0000000..85f382b
+--- /dev/null
++++ b/frontend/src/App.test.tsx
+@@ -0,0 +1,27 @@
++import { render, screen } from '@testing-library/react';
++import userEvent from '@testing-library/user-event';
++import { describe, expect, it } from 'vitest';
++import { App } from './App';
++
++describe('App', () => {
++  it('рендерит заголовок, калькулятор и подсказку по клавиатуре', () => {
++    render(<App />);
++
++    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Калькулятор');
++    expect(screen.getByTestId('calculator')).toBeInTheDocument();
++    expect(screen.getByTestId('keypad')).toBeInTheDocument();
++    expect(screen.getByTestId('keyboard-hint')).toHaveTextContent('Enter');
++  });
++
++  it('считает изменения состояния, приходящие из onChange', async () => {
++    const user = userEvent.setup();
++    render(<App />);
++
++    expect(screen.getByTestId('change-count')).toHaveTextContent('Изменений состояния: 1');
++
++    await user.click(screen.getByTestId('key-1'));
++
++    expect(screen.getByTestId('display-value')).toHaveTextContent('1');
++    expect(screen.getByTestId('change-count')).toHaveTextContent('Изменений состояния: 2');
++  });
++});
+diff --git a/frontend/src/App.tsx b/frontend/src/App.tsx
+new file mode 100644
+index 0000000..40baabe
+--- /dev/null
++++ b/frontend/src/App.tsx
+@@ -0,0 +1,34 @@
++import { useCallback, useState } from 'react';
++import type { ReactElement } from 'react';
++import { Calculator } from './components/Calculator';
++
++/**
++ * Корневой компонент сервиса frontend.
++ * Демонстрирует использование события `onChange` виджета калькулятора.
++ */
++export function App(): ReactElement {
++  const [changeCount, setChangeCount] = useState(0);
++
++  const handleChange = useCallback(() => {
++    setChangeCount((count) => count + 1);
++  }, []);
++
++  return (
++    <main className="app">
++      <header className="app__header">
++        <h1 className="app__title">Калькулятор</h1>
++        <p className="app__subtitle">calculator-test-app — сервис frontend</p>
++      </header>
++
++      <Calculator onChange={handleChange} />
++
++      <p className="app__hint" data-testid="keyboard-hint">
++        Клавиатура: 0-9, «.», «+», «-», «*», «/», Enter — «=», Backspace, Esc — «C», Del — «CE»,
++        «%», F9 — «±»
++      </p>
++      <p className="app__meta" data-testid="change-count">
++        Изменений состояния: {changeCount}
++      </p>
++    </main>
++  );
++}
+diff --git a/frontend/src/components/Calculator.test.tsx b/frontend/src/components/Calculator.test.tsx
+new file mode 100644
+index 0000000..041edbf
+--- /dev/null
++++ b/frontend/src/components/Calculator.test.tsx
+@@ -0,0 +1,153 @@
++import { render, screen } from '@testing-library/react';
++import userEvent from '@testing-library/user-event';
++import { describe, expect, it, vi } from 'vitest';
++import { INITIAL_STATE } from '../domain/calculator';
++import { Calculator } from './Calculator';
++import { CALCULATOR_KEYS } from './Keypad';
++
++type User = ReturnType<typeof userEvent.setup>;
++
++function displayText(): string {
++  return screen.getByTestId('display-value').textContent ?? '';
++}
++
++function expressionText(): string {
++  return (screen.getByTestId('expression').textContent ?? '').trim();
++}
++
++/** Нажимает клавиши по их стабильным id из раскладки. */
++async function clickKeys(user: User, ids: readonly string[]): Promise<void> {
++  for (const id of ids) {
++    await user.click(screen.getByTestId(`key-${id}`));
++  }
++}
++
++describe('Calculator', () => {
++  it('показывает начальное состояние', () => {
++    render(<Calculator />);
++
++    expect(displayText()).toBe(INITIAL_STATE.display);
++    expect(expressionText()).toBe('');
++    expect(screen.getByTestId('calculator')).toHaveAttribute('aria-label', 'Калькулятор');
++    expect(screen.getByTestId('display-value')).toHaveAttribute('data-state', 'ok');
++  });
++
++  it('выводит все клавиши раскладки контракта', () => {
++    render(<Calculator />);
++
++    expect(CALCULATOR_KEYS).toHaveLength(20);
++    for (const key of CALCULATOR_KEYS) {
++      const button = screen.getByTestId(`key-${key.id}`);
++      expect(button).toHaveAttribute('aria-label', key.ariaLabel);
++      expect(button).toHaveAttribute('data-action', key.action.type);
++      expect(button).toHaveAttribute('type', 'button');
++    }
++  });
++
++  it('считает результат по нажатиям клавиш', async () => {
++    const user = userEvent.setup();
++    render(<Calculator />);
++
++    await clickKeys(user, ['1', '2', 'add', '3', 'equals']);
++
++    expect(displayText()).toBe('15');
++    expect(expressionText()).toBe('');
++  });
++
++  it('показывает незавершённое выражение', async () => {
++    const user = userEvent.setup();
++    render(<Calculator />);
++
++    await clickKeys(user, ['7', 'multiply']);
++
++    expect(displayText()).toBe('7');
++    expect(expressionText()).toBe('7 ×');
++  });
++
++  it('переходит в состояние ошибки при делении на ноль', async () => {
++    const user = userEvent.setup();
++    render(<Calculator />);
++
++    await clickKeys(user, ['5', 'divide', '0', 'equals']);
++
++    expect(displayText()).toBe('Error');
++    expect(screen.getByTestId('display-value')).toHaveAttribute('data-state', 'error');
++    expect(screen.getByTestId('calculator')).toHaveClass('calculator--error');
++  });
++
++  it('сбрасывается клавишей «C» после ошибки', async () => {
++    const user = userEvent.setup();
++    render(<Calculator />);
++
++    await clickKeys(user, ['5', 'divide', '0', 'equals', 'clear']);
++
++    expect(displayText()).toBe('0');
++    expect(screen.getByTestId('calculator')).not.toHaveClass('calculator--error');
++  });
++
++  it('поддерживает ввод с клавиатуры', async () => {
++    const user = userEvent.setup();
++    render(<Calculator />);
++
++    await user.keyboard('12+3{Enter}');
++
++    expect(displayText()).toBe('15');
++  });
++
++  it('поддерживает Backspace и Escape с клавиатуры', async () => {
++    const user = userEvent.setup();
++    render(<Calculator />);
++
++    await user.keyboard('123{Backspace}');
++    expect(displayText()).toBe('12');
++
++    await user.keyboard('{Escape}');
++    expect(displayText()).toBe('0');
++  });
++
++  it('не перехватывает клавиатуру при enableKeyboard={false}', async () => {
++    const user = userEvent.setup();
++    render(<Calculator enableKeyboard={false} />);
++
++    await user.keyboard('5');
++
++    expect(displayText()).toBe('0');
++  });
++
++  it('не перехватывает клавиши, нажатые в поле ввода', async () => {
++    const user = userEvent.setup();
++    render(
++      <>
++        <input aria-label="Тестовое поле" />
++        <Calculator />
++      </>,
++    );
++
++    const field = screen.getByLabelText('Тестовое поле');
++    await user.click(field);
++    await user.type(field, '42');
++
++    expect(field).toHaveValue('42');
++    expect(displayText()).toBe('0');
++  });
++
++  it('уведомляет об изменениях состояния через onChange', async () => {
++    const user = userEvent.setup();
++    const handleChange = vi.fn();
++    render(<Calculator onChange={handleChange} />);
++
++    expect(handleChange).toHaveBeenCalledTimes(1);
++    expect(handleChange).toHaveBeenLastCalledWith(INITIAL_STATE);
++
++    await clickKeys(user, ['1']);
++
++    const calls = handleChange.mock.calls;
++    expect(calls[calls.length - 1]?.[0].display).toBe('1');
++  });
++
++  it('принимает начальное состояние через initialState', () => {
++    render(<Calculator initialState={{ ...INITIAL_STATE, display: '42', accumulator: 42 }} />);
++
++    expect(displayText()).toBe('42');
++  });
++});
+diff --git a/frontend/src/components/Calculator.tsx b/frontend/src/components/Calculator.tsx
+new file mode 100644
+index 0000000..06c58e8
+--- /dev/null
++++ b/frontend/src/components/Calculator.tsx
+@@ -0,0 +1,89 @@
++import { useCallback, useEffect, useReducer } from 'react';
++import type { ReactElement } from 'react';
++import { INITIAL_STATE, formatExpression, reduce } from '../domain/calculator';
++import type { CalculatorAction, CalculatorState } from '../domain/calculator';
++import { actionForKeyboardEvent } from '../domain/keyboard';
++import { Display } from './Display';
++import { Keypad } from './Keypad';
++
++/** Свойства виджета калькулятора — публичный интерфейс сервиса frontend. */
++export interface CalculatorProps {
++  /**
++   * Начальное состояние. Применяется только при первом рендере
++   * (компонент неконтролируемый: дальше состояние живёт внутри).
++   */
++  readonly initialState?: CalculatorState;
++  /**
++   * Уведомление об изменении состояния. Вызывается после каждого изменения,
++   * включая первый рендер, с актуальным состоянием.
++   */
++  readonly onChange?: (state: CalculatorState) => void;
++  /** Перехват клавиатуры окна. По умолчанию `true`. */
++  readonly enableKeyboard?: boolean;
++  /** Дополнительные CSS-классы корневого элемента. */
++  readonly className?: string;
++}
++
++/** Признак того, что клавиатурное событие пришло из поля ввода: такие события сервис не перехватывает. */
++function isEditableTarget(target: EventTarget | null): boolean {
++  if (!(target instanceof HTMLElement)) {
++    return false;
++  }
++  if (target.isContentEditable) {
++    return true;
++  }
++  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
++}
++
++/**
++ * Калькулятор: состояние в редьюсере {@link reduce}, ввод — с клавиш и с клавиатуры.
++ * Компонент не обращается к сети, к хранилищу и к другим сервисам.
++ */
++export function Calculator({
++  initialState,
++  onChange,
++  enableKeyboard = true,
++  className,
++}: CalculatorProps): ReactElement {
++  const [state, dispatch] = useReducer(reduce, initialState ?? INITIAL_STATE);
++
++  const handleAction = useCallback((action: CalculatorAction) => {
++    dispatch(action);
++  }, []);
++
++  useEffect(() => {
++    onChange?.(state);
++  }, [state, onChange]);
++
++  useEffect(() => {
++    if (!enableKeyboard) {
++      return undefined;
++    }
++    const handleKeyDown = (event: KeyboardEvent): void => {
++      if (isEditableTarget(event.target)) {
++        return;
++      }
++      const action = actionForKeyboardEvent(event.key);
++      if (action === null) {
++        return;
++      }
++      event.preventDefault();
++      dispatch(action);
++    };
++    window.addEventListener('keydown', handleKeyDown);
++    return () => {
++      window.removeEventListener('keydown', handleKeyDown);
++    };
++  }, [enableKeyboard]);
++
++  const classNames = ['calculator', state.error ? 'calculator--error' : null, className ?? null]
++    .filter((value): value is string => value !== null)
++    .join(' ');
++
++  return (
++    <section className={classNames} data-testid="calculator" aria-label="Калькулятор">
++      <Display value={state.display} expression={formatExpression(state)} hasError={state.error} />
++      <Keypad onAction={handleAction} />
++    </section>
++  );
++}
+diff --git a/frontend/src/components/Display.tsx b/frontend/src/components/Display.tsx
+new file mode 100644
+index 0000000..0d24a4f
+--- /dev/null
++++ b/frontend/src/components/Display.tsx
+@@ -0,0 +1,35 @@
++import type { ReactElement } from 'react';
++
++/** Свойства дисплея калькулятора (публичный интерфейс компонента). */
++export interface DisplayProps {
++  /** Текущее значение: строка состояния `display`. */
++  readonly value: string;
++  /** Строка незавершённого выражения (`'12 +'`) или пустая строка. */
++  readonly expression: string;
++  /** Признак состояния ошибки — влияет на `data-state` и оформление. */
++  readonly hasError: boolean;
++}
++
++/**
++ * Дисплей: строка выражения и текущее значение.
++ * Стабильные точки контракта — `data-testid` и атрибуты ARIA (см. docs/contracts/frontend.md).
++ */
++export function Display({ value, expression, hasError }: DisplayProps): ReactElement {
++  return (
++    <div className="display" data-testid="display">
++      <div className="display__expression" data-testid="expression" aria-hidden={expression === ''}>
++        {expression === '' ? '\u00a0' : expression}
++      </div>
++      <output
++        className="display__value"
++        data-testid="display-value"
++        data-state={hasError ? 'error' : 'ok'}
++        role="status"
++        aria-live="polite"
++        aria-label="Результат вычислений"
++      >
++        {value}
++      </output>
++    </div>
++  );
++}
+diff --git a/frontend/src/components/Keypad.tsx b/frontend/src/components/Keypad.tsx
+new file mode 100644
+index 0000000..2931d1a
+--- /dev/null
++++ b/frontend/src/components/Keypad.tsx
+@@ -0,0 +1,102 @@
++import type { ReactElement } from 'react';
++import type { CalculatorAction } from '../domain/calculator';
++
++/** Описание клавиши: контракт раскладки (id, подпись, действие, вариант оформления). */
++export interface CalculatorKeyDefinition {
++  /** Стабильный идентификатор: попадает в `data-testid="key-<id>"`. */
++  readonly id: string;
++  /** Текст на клавише. */
++  readonly label: string;
++  /** Доступное имя для скринридеров и тестов. */
++  readonly ariaLabel: string;
++  /** Действие, которое клавиша отправляет в редьюсер. */
++  readonly action: CalculatorAction;
++  /** Вариант оформления. */
++  readonly variant: 'digit' | 'operator' | 'function' | 'equals';
++}
++
++/** Раскладка клавиатуры калькулятора: 5 рядов по 4 клавиши, порядок = порядок отрисовки. */
++export const CALCULATOR_KEYS: readonly CalculatorKeyDefinition[] = Object.freeze([
++  { id: 'clear', label: 'C', ariaLabel: 'Очистить всё', action: { type: 'clear' }, variant: 'function' },
++  {
++    id: 'backspace',
++    label: '⌫',
++    ariaLabel: 'Удалить последний символ',
++    action: { type: 'backspace' },
++    variant: 'function',
++  },
++  { id: 'percent', label: '%', ariaLabel: 'Процент', action: { type: 'percent' }, variant: 'function' },
++  {
++    id: 'divide',
++    label: '÷',
++    ariaLabel: 'Деление',
++    action: { type: 'operator', operator: '÷' },
++    variant: 'operator',
++  },
++  { id: '7', label: '7', ariaLabel: 'Семь', action: { type: 'digit', digit: '7' }, variant: 'digit' },
++  { id: '8', label: '8', ariaLabel: 'Восемь', action: { type: 'digit', digit: '8' }, variant: 'digit' },
++  { id: '9', label: '9', ariaLabel: 'Девять', action: { type: 'digit', digit: '9' }, variant: 'digit' },
++  {
++    id: 'multiply',
++    label: '×',
++    ariaLabel: 'Умножение',
++    action: { type: 'operator', operator: '×' },
++    variant: 'operator',
++  },
++  { id: '4', label: '4', ariaLabel: 'Четыре', action: { type: 'digit', digit: '4' }, variant: 'digit' },
++  { id: '5', label: '5', ariaLabel: 'Пять', action: { type: 'digit', digit: '5' }, variant: 'digit' },
++  { id: '6', label: '6', ariaLabel: 'Шесть', action: { type: 'digit', digit: '6' }, variant: 'digit' },
++  {
++    id: 'subtract',
++    label: '-',
++    ariaLabel: 'Вычитание',
++    action: { type: 'operator', operator: '-' },
++    variant: 'operator',
++  },
++  { id: '1', label: '1', ariaLabel: 'Один', action: { type: 'digit', digit: '1' }, variant: 'digit' },
++  { id: '2', label: '2', ariaLabel: 'Два', action: { type: 'digit', digit: '2' }, variant: 'digit' },
++  { id: '3', label: '3', ariaLabel: 'Три', action: { type: 'digit', digit: '3' }, variant: 'digit' },
++  { id: 'add', label: '+', ariaLabel: 'Сложение', action: { type: 'operator', operator: '+' }, variant: 'operator' },
++  {
++    id: 'toggle-sign',
++    label: '±',
++    ariaLabel: 'Сменить знак',
++    action: { type: 'toggleSign' },
++    variant: 'function',
++  },
++  { id: '0', label: '0', ariaLabel: 'Ноль', action: { type: 'digit', digit: '0' }, variant: 'digit' },
++  { id: 'decimal', label: '.', ariaLabel: 'Десятичная точка', action: { type: 'decimal' }, variant: 'digit' },
++  { id: 'equals', label: '=', ariaLabel: 'Равно', action: { type: 'equals' }, variant: 'equals' },
++]);
++
++/** Свойства клавиатуры калькулятора. */
++export interface KeypadProps {
++  /** Единственный колбэк: клавиша передаёт своё действие наружу. */
++  readonly onAction: (action: CalculatorAction) => void;
++  /** Блокировка всех клавиш. */
++  readonly disabled?: boolean;
++}
++
++/** Клавиатура калькулятора: рендерит {@link CALCULATOR_KEYS} и вызывает `onAction`. */
++export function Keypad({ onAction, disabled = false }: KeypadProps): ReactElement {
++  return (
++    <div className="keypad" data-testid="keypad" role="group" aria-label="Клавиши калькулятора">
++      {CALCULATOR_KEYS.map((key) => (
++        <button
++          key={key.id}
++          type="button"
++          className={`keypad__key keypad__key--${key.variant}`}
++          data-testid={`key-${key.id}`}
++          data-action={key.action.type}
++          aria-label={key.ariaLabel}
++          disabled={disabled}
++          onClick={() => {
++            onAction(key.action);
++          }}
++        >
++          {key.label}
++        </button>
++      ))}
++    </div>
++  );
++}
+diff --git a/frontend/src/domain/calculator.test.ts b/frontend/src/domain/calculator.test.ts
+new file mode 100644
+index 0000000..d95e109
+--- /dev/null
++++ b/frontend/src/domain/calculator.test.ts
+@@ -0,0 +1,350 @@
++import { describe, expect, it } from 'vitest';
++import {
++  ERROR_STATE,
++  ERROR_TEXT,
++  INITIAL_STATE,
++  MAX_ENTRY_DIGITS,
++  evaluate,
++  formatExpression,
++  formatNumber,
++  isDigit,
++  reduce,
++} from './calculator';
++import type { CalculatorState } from './calculator';
++import { actionForKeyboardEvent } from './keyboard';
++
++/**
++ * Разбивает запись нажатий на токены: `{Имя}` — служебная клавиша (`{Backspace}`),
++ * `F9` — смена знака, любой другой символ — одиночная клавиша.
++ */
++const KEY_SEQUENCE = /\{Backspace\}|F9|[\s\S]/g;
++
++/** Псевдонимы токенов записи нажатий к значениям `KeyboardEvent.key`. */
++const KEY_ALIASES: Readonly<Record<string, string>> = Object.freeze({
++  '{Backspace}': 'Backspace',
++});
++
++/**
++ * Прогоняет последовательность нажатий через публичные интерфейсы сервиса:
++ * адаптер клавиатуры (`actionForKeyboardEvent`) + редьюсер (`reduce`).
++ */
++function pressKeys(keys: string, from: CalculatorState = INITIAL_STATE): CalculatorState {
++  return (keys.match(KEY_SEQUENCE) ?? []).reduce<CalculatorState>((state, token) => {
++    const key = KEY_ALIASES[token] ?? token;
++    const action = actionForKeyboardEvent(key);
++    if (action === null) {
++      throw new Error(`Клавиша «${key}» не поддерживается адаптером клавиатуры`);
++    }
++    return reduce(state, action);
++  }, from);
++}
++
++/** Действия для клавиш, которые нельзя выразить одним символом. */
++const pressBackspace = (state: CalculatorState): CalculatorState => reduce(state, { type: 'backspace' });
++const pressClearEntry = (state: CalculatorState): CalculatorState => reduce(state, { type: 'clearEntry' });
++const toggleSign = (state: CalculatorState): CalculatorState => reduce(state, { type: 'toggleSign' });
++
++describe('INITIAL_STATE', () => {
++  it('описывает чистое состояние калькулятора', () => {
++    expect(INITIAL_STATE).toEqual({
++      display: '0',
++      accumulator: null,
++      pendingOperator: null,
++      entry: null,
++      repeat: null,
++      error: false,
++    });
++  });
++
++  it('не изменяется редьюсером (immutable)', () => {
++    pressKeys('1+2=');
++    pressKeys('9/0=');
++    expect(INITIAL_STATE.display).toBe('0');
++    expect(INITIAL_STATE.accumulator).toBeNull();
++    expect(INITIAL_STATE.error).toBe(false);
++  });
++});
++
++describe('ввод числа', () => {
++  it('набирает многозначное число', () => {
++    expect(pressKeys('123').display).toBe('123');
++    expect(pressKeys('123').entry).toBe('123');
++  });
++
++  it('не оставляет ведущих нулей', () => {
++    expect(pressKeys('000').display).toBe('0');
++    expect(pressKeys('05').display).toBe('5');
++  });
++
++  it('вводит десятичную точку', () => {
++    expect(pressKeys('.').display).toBe('0.');
++    expect(pressKeys('.5').display).toBe('0.5');
++    expect(pressKeys('0.5').display).toBe('0.5');
++  });
++
++  it('игнорирует повторную десятичную точку', () => {
++    expect(pressKeys('1..2').display).toBe('1.2');
++    expect(pressKeys('1.2.3').display).toBe('1.23');
++  });
++
++  it(`ограничивает ввод ${MAX_ENTRY_DIGITS} цифрами`, () => {
++    const state = pressKeys('1'.repeat(40));
++    expect(state.display).toHaveLength(MAX_ENTRY_DIGITS);
++    expect(state.display).toBe('1'.repeat(MAX_ENTRY_DIGITS));
++  });
++
++  it('начинает новый ввод после вычисления результата', () => {
++    expect(pressKeys('2+3=7').display).toBe('7');
++    expect(pressKeys('2+3=7+1=').display).toBe('8');
++  });
++});
++
++describe('операторы', () => {
++  it('запоминает левый операнд и ожидающий оператор', () => {
++    const state = pressKeys('12+');
++    expect(state.display).toBe('12');
++    expect(state.accumulator).toBe(12);
++    expect(state.pendingOperator).toBe('+');
++    expect(state.entry).toBeNull();
++    expect(formatExpression(state)).toBe('12 +');
++  });
++
++  it('считает слева направо, без приоритетов операций', () => {
++    expect(pressKeys('2+3*').display).toBe('5');
++    expect(pressKeys('2+3*4=').display).toBe('20');
++  });
++
++  it('заменяет оператор при повторном нажатии', () => {
++    const state = pressKeys('5+*');
++    expect(state.pendingOperator).toBe('×');
++    expect(state.accumulator).toBe(5);
++    expect(state.display).toBe('5');
++  });
++
++  it('работает со всеми операторами контракта', () => {
++    expect(pressKeys('2+3=').display).toBe('5');
++    expect(pressKeys('5-8=').display).toBe('-3');
++    expect(pressKeys('6*7=').display).toBe('42');
++    expect(pressKeys('8/2=').display).toBe('4');
++  });
++
++  it('игнорирует оператор в состоянии ошибки', () => {
++    expect(pressKeys('5/0=+').display).toBe(ERROR_TEXT);
++    expect(pressKeys('5/0=+').error).toBe(true);
++  });
++});
++
++describe('клавиша «=»', () => {
++  it('завершает операцию и очищает строку выражения', () => {
++    const state = pressKeys('2+3=');
++    expect(state.display).toBe('5');
++    expect(state.accumulator).toBe(5);
++    expect(state.pendingOperator).toBeNull();
++    expect(state.entry).toBeNull();
++    expect(formatExpression(state)).toBe('');
++  });
++
++  it('повторяет последнюю операцию при повторных нажатиях', () => {
++    expect(pressKeys('2+3==').display).toBe('8');
++    expect(pressKeys('2+3===').display).toBe('11');
++    expect(pressKeys('2+3=').repeat).toEqual({ operator: '+', operand: 3 });
++  });
++
++  it('использует накопленное значение, если правый операнд не введён', () => {
++    expect(pressKeys('5+=').display).toBe('10');
++  });
++
++  it('без ожидающего оператора просто нормализует дисплей', () => {
++    const state = pressKeys('7=');
++    expect(state.display).toBe('7');
++    expect(state.accumulator).toBe(7);
++    expect(state.repeat).toBeNull();
++  });
++});
++
++describe('ошибки', () => {
++  it('деление на ноль переводит калькулятор в состояние ошибки', () => {
++    expect(pressKeys('5/0=')).toEqual(ERROR_STATE);
++    expect(pressKeys('0/0=').display).toBe(ERROR_TEXT);
++  });
++
++  it('переполнение диапазона тоже даёт ошибку', () => {
++    const huge: CalculatorState = {
++      display: '1e+308',
++      accumulator: 1e308,
++      pendingOperator: '×',
++      entry: '1e+308',
++      repeat: null,
++      error: false,
++    };
++    expect(reduce(huge, { type: 'equals' })).toEqual(ERROR_STATE);
++  });
++
++  it('игнорирует «=» и операторы в состоянии ошибки', () => {
++    expect(reduce(ERROR_STATE, { type: 'equals' })).toBe(ERROR_STATE);
++    expect(reduce(ERROR_STATE, { type: 'operator', operator: '+' })).toBe(ERROR_STATE);
++  });
++
++  it('начинает новое вычисление при вводе цифры', () => {
++    const state = pressKeys('5/0=7');
++    expect(state.display).toBe('7');
++    expect(state.error).toBe(false);
++    expect(state.accumulator).toBeNull();
++  });
++
++  it('начинает новое число при вводе точки', () => {
++    const state = pressKeys('5/0=.');
++    expect(state.display).toBe('0.');
++    expect(state.error).toBe(false);
++    expect(pressKeys('5', state).display).toBe('0.5');
++  });
++
++  it('сбрасывается по «C» и служебным клавишам', () => {
++    expect(pressKeys('5/0=C')).toEqual(INITIAL_STATE);
++    expect(pressKeys('5/0=%')).toEqual(INITIAL_STATE);
++    expect(toggleSign(pressKeys('5/0='))).toEqual(INITIAL_STATE);
++    expect(pressBackspace(pressKeys('5/0='))).toEqual(INITIAL_STATE);
++    expect(pressClearEntry(pressKeys('5/0='))).toEqual(INITIAL_STATE);
++  });
++});
++
++describe('«C» и «⌫»', () => {
++  it('«C» возвращает начальное состояние', () => {
++    expect(pressKeys('12+3C')).toEqual(INITIAL_STATE);
++  });
++
++  it('«⌫» удаляет последний введённый символ', () => {
++    expect(pressBackspace(pressKeys('123')).display).toBe('12');
++    expect(pressBackspace(pressKeys('1')).display).toBe('0');
++    expect(pressBackspace(pressKeys('0')).display).toBe('0');
++    expect(pressBackspace(pressKeys('0.5')).display).toBe('0.');
++  });
++
++  it('«⌫» не трогает вычисленный результат', () => {
++    expect(pressBackspace(pressKeys('2+3=')).display).toBe('5');
++  });
++
++  it('очистка ввода сохраняет незавершённую операцию', () => {
++    const afterClearEntry = pressClearEntry(pressKeys('12+3'));
++    expect(afterClearEntry.display).toBe('0');
++    expect(afterClearEntry.accumulator).toBe(12);
++    expect(afterClearEntry.pendingOperator).toBe('+');
++    expect(pressKeys('5=', afterClearEntry).display).toBe('17');
++  });
++});
++
++describe('«±» и «%»', () => {
++  it('«±» меняет знак вводимого числа', () => {
++    const signed = toggleSign(pressKeys('5'));
++    expect(signed.display).toBe('-5');
++    expect(toggleSign(signed).display).toBe('5');
++    expect(toggleSign(pressKeys('0')).display).toBe('0');
++    expect(toggleSign(toggleSign(toggleSign(pressKeys('5')))).display).toBe('-5');
++  });
++
++  it('«±» меняет знак накопленного значения, если ввод не начат', () => {
++    const state = toggleSign(pressKeys('5+'));
++    expect(state.display).toBe('-5');
++    expect(state.entry).toBe('-5');
++    expect(pressKeys('=', state).display).toBe('0');
++  });
++
++  it('«%» считает процент от накопленного значения для «+» и «-»', () => {
++    expect(pressKeys('200+10%').display).toBe('20');
++    expect(pressKeys('200+10%=').display).toBe('220');
++    expect(pressKeys('200-10%=').display).toBe('180');
++  });
++
++  it('«%» считает процент от накопленного значения для «×» и «÷»', () => {
++    expect(pressKeys('50*10%').display).toBe('5');
++    expect(pressKeys('50*10%=').display).toBe('250');
++    expect(pressKeys('80/10%=').display).toBe('10');
++  });
++
++  it('«%» без оператора делит значение на 100', () => {
++    expect(pressKeys('50%').display).toBe('0.5');
++    expect(pressKeys('7=%').display).toBe('0.07');
++  });
++});
++
++describe('formatNumber', () => {
++  it('убирает погрешность двоичной арифметики', () => {
++    expect(formatNumber(0.1 + 0.2)).toBe('0.3');
++  });
++
++  it('ограничивает вывод 12 значащими цифрами', () => {
++    expect(formatNumber(1 / 3)).toBe('0.333333333333');
++  });
++
++  it('не выводит незначащие нули и «-0»', () => {
++    expect(formatNumber(100)).toBe('100');
++    expect(formatNumber(-12.5)).toBe('-12.5');
++    expect(formatNumber(0)).toBe('0');
++    expect(formatNumber(-0)).toBe('0');
++  });
++
++  it('переходит на экспоненциальную запись на границах диапазона', () => {
++    expect(formatNumber(1e12)).toBe('1e+12');
++    expect(formatNumber(1234567890123)).toBe('1.23456789012e+12');
++    expect(formatNumber(1e-10)).toBe('1e-10');
++    expect(formatNumber(1e-9)).toBe('1e-9');
++    expect(formatNumber(999999999999)).toBe('999999999999');
++  });
++
++  it('нефинитные значения форматирует как ошибку', () => {
++    expect(formatNumber(Number.NaN)).toBe(ERROR_TEXT);
++    expect(formatNumber(Number.POSITIVE_INFINITY)).toBe(ERROR_TEXT);
++    expect(formatNumber(Number.NEGATIVE_INFINITY)).toBe(ERROR_TEXT);
++  });
++});
++
++describe('formatExpression', () => {
++  it('пуста до ввода оператора и в состоянии ошибки', () => {
++    expect(formatExpression(INITIAL_STATE)).toBe('');
++    expect(formatExpression(ERROR_STATE)).toBe('');
++    expect(formatExpression(pressKeys('12'))).toBe('');
++  });
++
++  it('показывает накопленный операнд и оператор', () => {
++    expect(formatExpression(pressKeys('2+'))).toBe('2 +');
++    expect(formatExpression(pressKeys('2+3*'))).toBe('5 ×');
++  });
++});
++
++describe('evaluate', () => {
++  it('выполняет четыре операции контракта', () => {
++    expect(evaluate(2, 3, '+')).toBe(5);
++    expect(evaluate(2, 3, '-')).toBe(-1);
++    expect(evaluate(2, 3, '×')).toBe(6);
++    expect(evaluate(8, 2, '÷')).toBe(4);
++  });
++
++  it('возвращает NaN при делении на ноль', () => {
++    expect(evaluate(5, 0, '÷')).toBeNaN();
++    expect(evaluate(0, 0, '÷')).toBeNaN();
++  });
++});
++
++describe('isDigit', () => {
++  it('принимает ровно одну десятичную цифру', () => {
++    expect(isDigit('0')).toBe(true);
++    expect(isDigit('7')).toBe(true);
++    expect(isDigit('a')).toBe(false);
++    expect(isDigit('12')).toBe(false);
++    expect(isDigit('')).toBe(false);
++  });
++});
++
++describe('иммутабельность состояния', () => {
++  it('не мутирует переданное состояние и возвращает новый объект', () => {
++    const frozen: CalculatorState = Object.freeze({ ...INITIAL_STATE });
++    const next = pressKeys('1+2=', frozen);
++    expect(frozen).toEqual(INITIAL_STATE);
++    expect(next).not.toBe(frozen);
++  });
++
++  it('возвращает тот же объект, если действие не меняет состояние', () => {
++    expect(reduce(INITIAL_STATE, { type: 'backspace' })).toBe(INITIAL_STATE);
++    expect(reduce(INITIAL_STATE, { type: 'clear' })).toBe(INITIAL_STATE);
++  });
++});
+diff --git a/frontend/src/domain/calculator.ts b/frontend/src/domain/calculator.ts
+new file mode 100644
+index 0000000..ec1f825
+--- /dev/null
++++ b/frontend/src/domain/calculator.ts
+@@ -0,0 +1,374 @@
++/**
++ * Доменное ядро сервиса frontend «calculator-test-app».
++ *
++ * Модуль является источником правды о вычислениях (см. docs/contracts/frontend.md):
++ * состояние неизменяемо, переходы описаны чистым редьюсером `reduce`,
++ * побочных эффектов, обращений к DOM и к сети здесь нет.
++ */
++
++/** Символы операторов, поддерживаемые калькулятором. */
++export const OPERATORS = ['+', '-', '×', '÷'] as const;
++
++/** Оператор бинарной операции. */
++export type Operator = (typeof OPERATORS)[number];
++
++/** Десятичные цифры, допустимые на вводе. */
++export const DIGITS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] as const;
++
++/** Одна цифра ввода. */
++export type Digit = (typeof DIGITS)[number];
++
++/** Текст дисплея в начальном состоянии и после сброса. */
++export const INITIAL_DISPLAY = '0';
++
++/** Текст дисплея в состоянии ошибки (деление на ноль, переполнение). */
++export const ERROR_TEXT = 'Error';
++
++/** Максимальное количество цифр в одном вводимом числе. */
++export const MAX_ENTRY_DIGITS = 16;
++
++/** Максимальное количество значащих цифр при выводе результата. */
++export const MAX_SIGNIFICANT_DIGITS = 12;
++
++/** Верхняя граница обычной записи; выше — экспоненциальная. */
++export const EXPONENTIAL_UPPER_BOUND = 1e12;
++
++/** Нижняя граница обычной записи; ниже — экспоненциальная. */
++export const EXPONENTIAL_LOWER_BOUND = 1e-9;
++
++/**
++ * Полное состояние калькулятора.
++ *
++ * `display` — единственное поле, которое контракт разрешает показывать пользователю
++ * как «текущее значение». Остальные поля описывают контекст вычисления.
++ */
++export interface CalculatorState {
++  /** Текущая строка дисплея (`'0'`, `'-12.5'`, `'1.5e+12'`, `'Error'`). */
++  readonly display: string;
++  /** Накопленный левый операнд незавершённой операции. */
++  readonly accumulator: number | null;
++  /** Ожидающий оператор незавершённой операции. */
++  readonly pendingOperator: Operator | null;
++  /** Вводимое пользователем число как строка; `null` — на дисплее результат вычисления. */
++  readonly entry: string | null;
++  /** Операция последнего `equals` для повторного выполнения по повторному нажатию `=`. */
++  readonly repeat: { readonly operator: Operator; readonly operand: number } | null;
++  /** Признак состояния ошибки: вычисления игнорируются до сброса. */
++  readonly error: boolean;
++}
++
++/** Команды, которые принимает редьюсер. */
++export type CalculatorAction =
++  | { readonly type: 'digit'; readonly digit: Digit }
++  | { readonly type: 'decimal' }
++  | { readonly type: 'operator'; readonly operator: Operator }
++  | { readonly type: 'equals' }
++  | { readonly type: 'clear' }
++  | { readonly type: 'clearEntry' }
++  | { readonly type: 'backspace' }
++  | { readonly type: 'toggleSign' }
++  | { readonly type: 'percent' };
++
++/** Начальное состояние: дисплей `0`, вычисление не начато. */
++export const INITIAL_STATE: CalculatorState = Object.freeze({
++  display: INITIAL_DISPLAY,
++  accumulator: null,
++  pendingOperator: null,
++  entry: null,
++  repeat: null,
++  error: false,
++});
++
++/** Состояние ошибки. */
++export const ERROR_STATE: CalculatorState = Object.freeze({
++  display: ERROR_TEXT,
++  accumulator: null,
++  pendingOperator: null,
++  entry: null,
++  repeat: null,
++  error: true,
++});
++
++/** Проверка, что строка является допустимой цифрой ввода. */
++export function isDigit(value: string): value is Digit {
++  return (DIGITS as readonly string[]).includes(value);
++}
++
++
++/**
++ * Вычисляет результат бинарной операции.
++ * Деление на ноль возвращает `NaN` — редьюсер переводит такое состояние в ошибку.
++ */
++export function evaluate(left: number, right: number, operator: Operator): number {
++  switch (operator) {
++    case '+':
++      return left + right;
++    case '-':
++      return left - right;
++    case '×':
++      return left * right;
++    case '÷':
++      return right === 0 ? Number.NaN : left / right;
++    default:
++      return Number.NaN;
++  }
++}
++
++/**
++ * Форматирует число для дисплея.
++ * Нефинитные значения (`NaN`, `±Infinity`) форматируются как {@link ERROR_TEXT}.
++ */
++export function formatNumber(value: number): string {
++  if (!Number.isFinite(value)) {
++    return ERROR_TEXT;
++  }
++  if (value === 0) {
++    return INITIAL_DISPLAY;
++  }
++  const magnitude = Math.abs(value);
++  if (magnitude >= EXPONENTIAL_UPPER_BOUND || magnitude < EXPONENTIAL_LOWER_BOUND) {
++    return toExponentialText(value);
++  }
++  const precise = value.toPrecision(MAX_SIGNIFICANT_DIGITS);
++  return precise.includes('e') ? toExponentialText(value) : stripTrailingZeros(precise);
++}
++
++/** Строка незавершённого выражения для дополнительной строки дисплея (`'12 +'`). */
++export function formatExpression(state: CalculatorState): string {
++  if (state.error || state.accumulator === null || state.pendingOperator === null) {
++    return '';
++  }
++  return `${formatNumber(state.accumulator)} ${state.pendingOperator}`;
++}
++
++/**
++ * Чистый редьюсер: `(state, action) => state`.
++ * Возвращает новый объект состояния либо тот же самый, если действие не меняет состояние.
++ */
++export function reduce(state: CalculatorState, action: CalculatorAction): CalculatorState {
++  switch (action.type) {
++    case 'digit':
++      return applyDigit(state, action.digit);
++    case 'decimal':
++      return applyDecimal(state);
++    case 'operator':
++      return applyOperator(state, action.operator);
++    case 'equals':
++      return applyEquals(state);
++    case 'clear':
++      return INITIAL_STATE;
++    case 'clearEntry':
++      return applyClearEntry(state);
++    case 'backspace':
++      return applyBackspace(state);
++    case 'toggleSign':
++      return applyToggleSign(state);
++    case 'percent':
++      return applyPercent(state);
++    default:
++      return state;
++  }
++}
++
++/** Убирает незначащие нули в дробной части (`'1.2300'` → `'1.23'`). */
++function stripTrailingZeros(text: string): string {
++  return text.includes('.') ? text.replace(/\.?0+$/, '') : text;
++}
++
++/** Экспоненциальная запись с {@link MAX_SIGNIFICANT_DIGITS} значащими цифрами и без лишних нулей. */
++function toExponentialText(value: number): string {
++  const [mantissa = INITIAL_DISPLAY, exponent = '0'] = value
++    .toExponential(MAX_SIGNIFICANT_DIGITS - 1)
++    .split('e');
++  return `${stripTrailingZeros(mantissa)}e${exponent}`;
++}
++
++/** Переводит строку ввода в число; неполные строки (`''`, `'-'`, `'0.'`) трактуются как 0. */
++function toNumber(text: string): number {
++  return text === '' || text === '-' ? 0 : Number(text);
++}
++
++/** Заменяет текущий ввод готовым числом. */
++function startEntry(state: CalculatorState, entry: string): CalculatorState {
++  return { ...state, entry, display: entry, repeat: null, error: false };
++}
++
++/** Количество цифр в строке ввода (минус и точка не считаются). */
++function digitCount(entry: string): number {
++  let count = 0;
++  for (const char of entry) {
++    if (isDigit(char)) {
++      count += 1;
++    }
++  }
++  return count;
++}
++
++/**
++ * Признак того, что ввод получен из вычисленного результата (экспоненциальная запись),
++ * а не набран пользователем: такой ввод нельзя продолжать цифрами.
++ */
++function isComputedEntry(entry: string): boolean {
++  return entry.includes('e');
++}
++
++function applyDigit(state: CalculatorState, digit: Digit): CalculatorState {
++  if (state.error) {
++    return startEntry(INITIAL_STATE, digit);
++  }
++  if (state.entry === null || isComputedEntry(state.entry) || state.entry === '-') {
++    return startEntry(state, digit);
++  }
++  if (digitCount(state.entry) >= MAX_ENTRY_DIGITS) {
++    return state;
++  }
++  const next = state.entry === INITIAL_DISPLAY ? digit : `${state.entry}${digit}`;
++  return startEntry(state, next);
++}
++
++function applyDecimal(state: CalculatorState): CalculatorState {
++  if (state.error) {
++    return startEntry(INITIAL_STATE, `${INITIAL_DISPLAY}.`);
++  }
++  if (state.entry === null || isComputedEntry(state.entry)) {
++    return startEntry(state, `${INITIAL_DISPLAY}.`);
++  }
++  if (state.entry.includes('.')) {
++    return state;
++  }
++  return startEntry(state, `${state.entry}.`);
++}
++
++function applyOperator(state: CalculatorState, operator: Operator): CalculatorState {
++  if (state.error) {
++    return state;
++  }
++  const { accumulator, entry, pendingOperator } = state;
++  if (pendingOperator !== null && entry !== null && accumulator !== null) {
++    const result = evaluate(accumulator, toNumber(entry), pendingOperator);
++    if (!Number.isFinite(result)) {
++      return ERROR_STATE;
++    }
++    return {
++      display: formatNumber(result),
++      accumulator: result,
++      pendingOperator: operator,
++      entry: null,
++      repeat: null,
++      error: false,
++    };
++  }
++  const value = entry !== null ? toNumber(entry) : accumulator ?? 0;
++  if (!Number.isFinite(value)) {
++    return ERROR_STATE;
++  }
++  return {
++    display: formatNumber(value),
++    accumulator: value,
++    pendingOperator: operator,
++    entry: null,
++    repeat: null,
++    error: false,
++  };
++}
++
++function applyEquals(state: CalculatorState): CalculatorState {
++  if (state.error) {
++    return state;
++  }
++  const { accumulator, entry, pendingOperator, repeat } = state;
++  if (pendingOperator !== null && accumulator !== null) {
++    const operand = entry !== null ? toNumber(entry) : accumulator;
++    const result = evaluate(accumulator, operand, pendingOperator);
++    if (!Number.isFinite(result)) {
++      return ERROR_STATE;
++    }
++    return {
++      display: formatNumber(result),
++      accumulator: result,
++      pendingOperator: null,
++      entry: null,
++      repeat: { operator: pendingOperator, operand },
++      error: false,
++    };
++  }
++  if (repeat !== null) {
++    const left = accumulator ?? toNumber(state.display);
++    const result = evaluate(left, repeat.operand, repeat.operator);
++    if (!Number.isFinite(result)) {
++      return ERROR_STATE;
++    }
++    return {
++      display: formatNumber(result),
++      accumulator: result,
++      pendingOperator: null,
++      entry: null,
++      repeat,
++      error: false,
++    };
++  }
++  const value = entry !== null ? toNumber(entry) : accumulator ?? toNumber(state.display);
++  if (!Number.isFinite(value)) {
++    return ERROR_STATE;
++  }
++  return {
++    display: formatNumber(value),
++    accumulator: value,
++    pendingOperator: null,
++    entry: null,
++    repeat: null,
++    error: false,
++  };
++}
++
++function applyClearEntry(state: CalculatorState): CalculatorState {
++  if (state.error) {
++    return INITIAL_STATE;
++  }
++  return { ...state, display: INITIAL_DISPLAY, entry: INITIAL_DISPLAY, repeat: null };
++}
++
++function applyBackspace(state: CalculatorState): CalculatorState {
++  if (state.error) {
++    return INITIAL_STATE;
++  }
++  if (state.entry === null || isComputedEntry(state.entry)) {
++    return state;
++  }
++  const trimmed = state.entry.slice(0, -1);
++  const next = trimmed === '' || trimmed === '-' ? INITIAL_DISPLAY : trimmed;
++  return { ...state, display: next, entry: next };
++}
++
++function applyToggleSign(state: CalculatorState): CalculatorState {
++  if (state.error) {
++    return INITIAL_STATE;
++  }
++  if (state.entry === null || isComputedEntry(state.entry)) {
++    const value =
++      state.entry !== null ? toNumber(state.entry) : state.accumulator ?? toNumber(state.display);
++    const next = formatNumber(-value);
++    return { ...state, display: next, entry: next, repeat: null };
++  }
++  const next = state.entry.startsWith('-')
++    ? state.entry.slice(1)
++    : state.entry === INITIAL_DISPLAY
++      ? INITIAL_DISPLAY
++      : `-${state.entry}`;
++  return { ...state, display: next, entry: next, repeat: null };
++}
++
++function applyPercent(state: CalculatorState): CalculatorState {
++  if (state.error) {
++    return INITIAL_STATE;
++  }
++  const { accumulator, entry, pendingOperator } = state;
++  const value = entry !== null ? toNumber(entry) : accumulator ?? toNumber(state.display);
++  const isRelative = pendingOperator !== null && accumulator !== null;
++  const result = isRelative ? (accumulator * value) / 100 : value / 100;
++  if (!Number.isFinite(result)) {
++    return ERROR_STATE;
++  }
++  const next = formatNumber(result);
++  return { ...state, display: next, entry: next, repeat: null };
++}
+diff --git a/frontend/src/domain/keyboard.test.ts b/frontend/src/domain/keyboard.test.ts
+new file mode 100644
+index 0000000..d096773
+--- /dev/null
++++ b/frontend/src/domain/keyboard.test.ts
+@@ -0,0 +1,57 @@
++import { describe, expect, it } from 'vitest';
++import { DIGITS, OPERATORS } from './calculator';
++import type { CalculatorAction } from './calculator';
++import { KEYBOARD_ACTIONS, actionForKeyboardEvent } from './keyboard';
++
++describe('actionForKeyboardEvent', () => {
++  it('переводит каждую цифру в действие ввода', () => {
++    for (const digit of DIGITS) {
++      expect(actionForKeyboardEvent(digit)).toEqual({ type: 'digit', digit });
++    }
++  });
++
++  it('переводит десятичные разделители', () => {
++    expect(actionForKeyboardEvent('.')).toEqual({ type: 'decimal' });
++    expect(actionForKeyboardEvent(',')).toEqual({ type: 'decimal' });
++  });
++
++  it('переводит арифметические операторы в символы контракта', () => {
++    expect(actionForKeyboardEvent('+')).toEqual({ type: 'operator', operator: '+' });
++    expect(actionForKeyboardEvent('-')).toEqual({ type: 'operator', operator: '-' });
++    expect(actionForKeyboardEvent('*')).toEqual({ type: 'operator', operator: '×' });
++    expect(actionForKeyboardEvent('×')).toEqual({ type: 'operator', operator: '×' });
++    expect(actionForKeyboardEvent('/')).toEqual({ type: 'operator', operator: '÷' });
++    expect(actionForKeyboardEvent('÷')).toEqual({ type: 'operator', operator: '÷' });
++  });
++
++  it('переводит завершение, сброс и служебные клавиши', () => {
++    expect(actionForKeyboardEvent('=')).toEqual({ type: 'equals' });
++    expect(actionForKeyboardEvent('Enter')).toEqual({ type: 'equals' });
++    expect(actionForKeyboardEvent('Escape')).toEqual({ type: 'clear' });
++    expect(actionForKeyboardEvent('c')).toEqual({ type: 'clear' });
++    expect(actionForKeyboardEvent('C')).toEqual({ type: 'clear' });
++    expect(actionForKeyboardEvent('Delete')).toEqual({ type: 'clearEntry' });
++    expect(actionForKeyboardEvent('Backspace')).toEqual({ type: 'backspace' });
++    expect(actionForKeyboardEvent('%')).toEqual({ type: 'percent' });
++    expect(actionForKeyboardEvent('F9')).toEqual({ type: 'toggleSign' });
++  });
++
++  it('возвращает null для неподдерживаемых клавиш', () => {
++    expect(actionForKeyboardEvent('q')).toBeNull();
++    expect(actionForKeyboardEvent('F1')).toBeNull();
++    expect(actionForKeyboardEvent('Shift')).toBeNull();
++    expect(actionForKeyboardEvent('Tab')).toBeNull();
++    expect(actionForKeyboardEvent('ArrowUp')).toBeNull();
++    expect(actionForKeyboardEvent('')).toBeNull();
++  });
++
++  it('содержит оператор-действия только из контракта операторов', () => {
++    const operators = Object.values(KEYBOARD_ACTIONS)
++      .filter((action): action is Extract<CalculatorAction, { type: 'operator' }> => action.type === 'operator')
++      .map((action) => action.operator);
++    expect(operators.length).toBeGreaterThan(0);
++    for (const operator of operators) {
++      expect(OPERATORS).toContain(operator);
++    }
++  });
++});
+diff --git a/frontend/src/domain/keyboard.ts b/frontend/src/domain/keyboard.ts
+new file mode 100644
+index 0000000..6476cc0
+--- /dev/null
++++ b/frontend/src/domain/keyboard.ts
+@@ -0,0 +1,38 @@
++/**
++ * Адаптер клавиатуры: перевод `KeyboardEvent.key` в действие калькулятора.
++ * Признак «нет действия» — `null`; такие клавиши сервис не перехватывает.
++ */
++import { isDigit } from './calculator';
++import type { CalculatorAction } from './calculator';
++
++/**
++ * Карта клавиш, не являющихся цифрами.
++ * Ключ — значение `KeyboardEvent.key`.
++ */
++export const KEYBOARD_ACTIONS: Readonly<Record<string, CalculatorAction>> = Object.freeze({
++  '.': { type: 'decimal' },
++  ',': { type: 'decimal' },
++  '+': { type: 'operator', operator: '+' },
++  '-': { type: 'operator', operator: '-' },
++  '*': { type: 'operator', operator: '×' },
++  '×': { type: 'operator', operator: '×' },
++  '/': { type: 'operator', operator: '÷' },
++  '÷': { type: 'operator', operator: '÷' },
++  '=': { type: 'equals' },
++  Enter: { type: 'equals' },
++  Escape: { type: 'clear' },
++  c: { type: 'clear' },
++  C: { type: 'clear' },
++  Delete: { type: 'clearEntry' },
++  Backspace: { type: 'backspace' },
++  '%': { type: 'percent' },
++  F9: { type: 'toggleSign' },
++});
++
++/** Возвращает действие для нажатой клавиши или `null`, если клавиша не поддерживается. */
++export function actionForKeyboardEvent(key: string): CalculatorAction | null {
++  if (isDigit(key)) {
++    return { type: 'digit', digit: key };
++  }
++  return KEYBOARD_ACTIONS[key] ?? null;
++}
+diff --git a/frontend/src/index.css b/frontend/src/index.css
+new file mode 100644
+index 0000000..35d3127
+--- /dev/null
++++ b/frontend/src/index.css
+@@ -0,0 +1,167 @@
++:root {
++  color-scheme: dark;
++  --surface: #14161c;
++  --surface-raised: #1d212b;
++  --border: #2b3140;
++  --text: #f2f4f8;
++  --text-muted: #9aa3b5;
++  --accent: #4c8dff;
++  --accent-strong: #2f6fe0;
++  --danger: #ff6b6b;
++  font-family: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
++}
++
++* {
++  box-sizing: border-box;
++}
++
++body {
++  margin: 0;
++  min-height: 100vh;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  padding: 24px;
++  background: radial-gradient(circle at 20% 0%, #1c2230 0%, #0d0f14 60%);
++  color: var(--text);
++}
++
++.app {
++  width: 100%;
++  max-width: 360px;
++  display: flex;
++  flex-direction: column;
++  gap: 16px;
++  text-align: center;
++}
++
++.app__header {
++  display: flex;
++  flex-direction: column;
++  gap: 4px;
++}
++
++.app__title {
++  margin: 0;
++  font-size: 1.5rem;
++  font-weight: 600;
++}
++
++.app__subtitle,
++.app__hint,
++.app__meta {
++  margin: 0;
++  color: var(--text-muted);
++  font-size: 0.8rem;
++  line-height: 1.4;
++}
++
++.calculator {
++  display: flex;
++  flex-direction: column;
++  gap: 12px;
++  padding: 16px;
++  background: var(--surface);
++  border: 1px solid var(--border);
++  border-radius: 20px;
++  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
++}
++
++.calculator--error {
++  border-color: var(--danger);
++}
++
++.display {
++  display: flex;
++  flex-direction: column;
++  align-items: flex-end;
++  gap: 6px;
++  padding: 12px 14px;
++  min-height: 84px;
++  background: var(--surface-raised);
++  border: 1px solid var(--border);
++  border-radius: 14px;
++}
++
++.display__expression {
++  width: 100%;
++  overflow: hidden;
++  text-align: right;
++  white-space: nowrap;
++  text-overflow: ellipsis;
++  color: var(--text-muted);
++  font-size: 0.85rem;
++  font-variant-numeric: tabular-nums;
++}
++
++.display__value {
++  width: 100%;
++  overflow: hidden;
++  text-align: right;
++  white-space: nowrap;
++  text-overflow: ellipsis;
++  font-size: 2rem;
++  font-weight: 600;
++  font-variant-numeric: tabular-nums;
++}
++
++.display__value[data-state='error'] {
++  color: var(--danger);
++}
++
++.keypad {
++  display: grid;
++  grid-template-columns: repeat(4, 1fr);
++  gap: 8px;
++}
++
++.keypad__key {
++  padding: 14px 0;
++  font-size: 1.05rem;
++  font-weight: 500;
++  color: var(--text);
++  background: var(--surface-raised);
++  border: 1px solid var(--border);
++  border-radius: 12px;
++  cursor: pointer;
++  transition:
++    background-color 120ms ease,
++    transform 80ms ease;
++}
++
++.keypad__key:hover:not(:disabled) {
++  background: #262c39;
++}
++
++.keypad__key:active:not(:disabled) {
++  transform: translateY(1px);
++}
++
++.keypad__key:focus-visible {
++  outline: 2px solid var(--accent);
++  outline-offset: 2px;
++}
++
++.keypad__key:disabled {
++  opacity: 0.5;
++  cursor: not-allowed;
++}
++
++.keypad__key--operator {
++  color: var(--accent);
++  font-size: 1.2rem;
++}
++
++.keypad__key--equals {
++  background: var(--accent-strong);
++  border-color: var(--accent-strong);
++  color: #fff;
++}
++
++.keypad__key--equals:hover:not(:disabled) {
++  background: var(--accent);
++}
++
++.keypad__key--function {
++  color: var(--text-muted);
++}
+diff --git a/frontend/src/main.tsx b/frontend/src/main.tsx
+new file mode 100644
+index 0000000..65cac82
+--- /dev/null
++++ b/frontend/src/main.tsx
+@@ -0,0 +1,16 @@
++import { StrictMode } from 'react';
++import { createRoot } from 'react-dom/client';
++import { App } from './App';
++import './index.css';
++
++const container = document.getElementById('root');
++
++if (container === null) {
++  throw new Error('Не найден корневой элемент #root');
++}
++
++createRoot(container).render(
++  <StrictMode>
++    <App />
++  </StrictMode>,
++);
+diff --git a/frontend/src/test/setup.ts b/frontend/src/test/setup.ts
+new file mode 100644
+index 0000000..0d74b73
+--- /dev/null
++++ b/frontend/src/test/setup.ts
+@@ -0,0 +1,7 @@
++import '@testing-library/jest-dom/vitest';
++import { cleanup } from '@testing-library/react';
++import { afterEach } from 'vitest';
++
++afterEach(() => {
++  cleanup();
++});
+diff --git a/frontend/tsconfig.json b/frontend/tsconfig.json
+new file mode 100644
+index 0000000..0e5abd1
+--- /dev/null
++++ b/frontend/tsconfig.json
+@@ -0,0 +1,22 @@
++{
++  "compilerOptions": {
++    "target": "ES2022",
++    "lib": ["ES2022", "DOM", "DOM.Iterable"],
++    "module": "ESNext",
++    "moduleResolution": "bundler",
++    "jsx": "react-jsx",
++    "strict": true,
++    "noUncheckedIndexedAccess": true,
++    "noImplicitOverride": true,
++    "noUnusedLocals": true,
++    "noUnusedParameters": true,
++    "noFallthroughCasesInSwitch": true,
++    "verbatimModuleSyntax": true,
++    "isolatedModules": true,
++    "resolveJsonModule": true,
++    "skipLibCheck": true,
++    "noEmit": true,
++    "types": ["vite/client"]
++  },
++  "include": ["src", "vite.config.ts"]
++}
+diff --git a/frontend/vite.config.ts b/frontend/vite.config.ts
+new file mode 100644
+index 0000000..1f46bde
+--- /dev/null
++++ b/frontend/vite.config.ts
+@@ -0,0 +1,33 @@
++import react from '@vitejs/plugin-react';
++import { defineConfig } from 'vitest/config';
++
++/**
++ * Интерфейс сборки и запуска сервиса frontend.
++ * Значения зафиксированы контрактом: docs/contracts/frontend.md (раздел «Сборка и запуск»).
++ */
++export default defineConfig({
++  plugins: [react()],
++  server: {
++    host: true,
++    port: 5173,
++    strictPort: true,
++  },
++  preview: {
++    host: true,
++    port: 4173,
++    strictPort: true,
++  },
++  build: {
++    outDir: 'dist',
++    target: 'es2022',
++    sourcemap: true,
++  },
++  test: {
++    environment: 'jsdom',
++    globals: true,
++    setupFiles: ['./src/test/setup.ts'],
++    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
++    restoreMocks: true,
++    css: false,
++  },
++});
+diff --git a/package.json b/package.json
+new file mode 100644
+index 0000000..c7efec0
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,22 @@
++{
++  "name": "calculator-test-app",
++  "version": "1.0.0",
++  "private": true,
++  "description": "Монорепозиторий сервиса calculator-test-app: сервис frontend (калькулятор) и его контракты",
++  "type": "module",
++  "engines": {
++    "node": ">=22.12.0"
++  },
++  "workspaces": [
++    "frontend"
++  ],
++  "scripts": {
++    "dev": "npm run dev --workspace frontend",
++    "build": "npm run build --workspace frontend",
++    "preview": "npm run preview --workspace frontend",
++    "test": "npm run test --workspace frontend",
++    "test:watch": "npm run test:watch --workspace frontend",
++    "typecheck": "npm run typecheck --workspace frontend",
++    "verify": "npm run typecheck && npm run test && npm run build"
++  }
++}
